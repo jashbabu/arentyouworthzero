@@ -2,14 +2,16 @@ import os
 import discord
 from discord.ext import commands
 
+# 1. Grab your token from env
 TOKEN = os.getenv("TOKEN")
 
+# 2. Fix: Added message_content intent so your prefix commands actually work
 intents = discord.Intents.default()
+intents.message_content = True 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 MOD_LOG_CHANNEL_ID = 1470294904201678959
 REPORT_CHANNEL_ID = 1470470688338084060
-
 
 # ---------- MODAL ----------
 class ReportModal(discord.ui.Modal, title="Submit a Report"):
@@ -22,6 +24,9 @@ class ReportModal(discord.ui.Modal, title="Submit a Report"):
 
     async def on_submit(self, interaction: discord.Interaction):
         mod_log = interaction.guild.get_channel(MOD_LOG_CHANNEL_ID)
+
+        if not mod_log:
+            return await interaction.response.send_message("Error: Mod log channel not found.", ephemeral=True)
 
         embed = discord.Embed(
             title="🚨 New Report",
@@ -45,43 +50,38 @@ class ReportModal(discord.ui.Modal, title="Submit a Report"):
             ephemeral=True
         )
 
-
 # ---------- VIEW ----------
 class ReportView(discord.ui.View):
     def __init__(self):
+        # timeout=None is mandatory for persistent views
         super().__init__(timeout=None)
 
-        self.add_item(
-            discord.ui.Button(
-                label="🚨 Report",
-                style=discord.ButtonStyle.danger,
-                custom_id="persistent_report_button",
-            )
-        )
-
-    @discord.ui.button(custom_id="persistent_report_button")
-    async def report_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button,
-    ):
+    # Fix: Use the decorator to define the button properly. 
+    # Having add_item AND the decorator was causing the crash.
+    @discord.ui.button(
+        label="🚨 Report", 
+        style=discord.ButtonStyle.danger, 
+        custom_id="persistent_report_button"
+    )
+    async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(ReportModal())
-
 
 # ---------- READY ----------
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user}")
-
-    # register persistent view
+    # This registers the view so it works even after a bot restart
     bot.add_view(ReportView())
+    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    print("------")
 
-    channel = bot.get_channel(REPORT_CHANNEL_ID)
-    if channel:
-        await channel.send(
-            "🚨 **Click below to submit a report**",
-            view=ReportView()
-        )
-
+# ---------- COMMANDS ----------
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def setup_report(ctx):
+    """Run this command once to send the report button to the channel"""
+    await ctx.send(
+        "🚨 **Click below to submit a report**\nOur moderation team will review it shortly.",
+        view=ReportView()
+    )
 
 bot.run(TOKEN)
