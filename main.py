@@ -5,7 +5,7 @@ from datetime import datetime
 
 # --- CONFIG ---
 TOKEN = os.getenv("TOKEN")
-MOD_LOG_CHANNEL_ID = 1470294904201678959
+MOD_LOG_CHANNEL_ID = 1470335672215797843
 
 # ---------- THE MODAL ----------
 class ReportModal(discord.ui.Modal):
@@ -117,3 +117,4 @@ async def setup_report(ctx):
     await ctx.message.delete()
 
 bot.run(TOKEN)
+
