@@ -1,87 +1,97 @@
 import os
 import discord
 from discord.ext import commands
+from datetime import datetime
 
-# 1. Grab your token from env
+# --- CONFIG (Change these IDs) ---
 TOKEN = os.getenv("TOKEN")
-
-# 2. Fix: Added message_content intent so your prefix commands actually work
-intents = discord.Intents.default()
-intents.message_content = True 
-bot = commands.Bot(command_prefix="!", intents=intents)
-
 MOD_LOG_CHANNEL_ID = 1470294904201678959
 REPORT_CHANNEL_ID = 1470470688338084060
 
-# ---------- MODAL ----------
-class ReportModal(discord.ui.Modal, title="Submit a Report"):
-    report = discord.ui.TextInput(
-        label="What happened?",
+# --- THE MODAL ---
+class ReportModal(discord.ui.Modal, title="📝 Submit a Server Report"):
+    # This is the text box users see
+    reason = discord.ui.TextInput(
+        label="What's the tea?",
+        placeholder="Describe the issue/user in detail...",
         style=discord.TextStyle.paragraph,
-        required=True,
+        min_length=10,
         max_length=1000,
+        required=True
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        mod_log = interaction.guild.get_channel(MOD_LOG_CHANNEL_ID)
+        # Find the channel to send the report to
+        log_channel = interaction.guild.get_channel(MOD_LOG_CHANNEL_ID)
+        
+        if not log_channel:
+            return await interaction.response.send_message("❌ Error: Log channel not found. Tell an Admin!", ephemeral=True)
 
-        if not mod_log:
-            return await interaction.response.send_message("Error: Mod log channel not found.", ephemeral=True)
-
+        # Create a sleek embed for the mods
         embed = discord.Embed(
-            title="🚨 New Report",
-            color=discord.Color.red(),
+            title="🚨 New Report Received",
+            color=discord.Color.from_rgb(255, 60, 60), # Neon red vibes
+            timestamp=datetime.now()
         )
-        embed.add_field(
-            name="Reporter",
-            value=f"{interaction.user.mention} (`{interaction.user.id}`)",
-            inline=False
-        )
-        embed.add_field(
-            name="Report",
-            value=self.report.value,
-            inline=False
-        )
+        embed.add_field(name="👤 Reporter", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
+        embed.add_field(name="📄 Details", value=self.reason.value, inline=False)
+        embed.set_footer(text=f"Report System • {interaction.guild.name}")
 
-        await mod_log.send(embed=embed)
+        await log_channel.send(embed=embed)
+        
+        # Confirm to the user (ephemeral = only they see it)
+        await interaction.response.send_message("✅ Report sent. The mods are on it!", ephemeral=True)
 
-        await interaction.response.send_message(
-            "✅ Report sent to moderators.",
-            ephemeral=True
-        )
-
-# ---------- VIEW ----------
-class ReportView(discord.ui.View):
+# --- THE PERSISTENT VIEW ---
+class PersistentReportView(discord.ui.View):
     def __init__(self):
-        # timeout=None is mandatory for persistent views
+        # timeout=None makes the button work even after the bot restarts
         super().__init__(timeout=None)
 
-    # Fix: Use the decorator to define the button properly. 
-    # Having add_item AND the decorator was causing the crash.
     @discord.ui.button(
-        label="🚨 Report", 
+        label="Report User", 
         style=discord.ButtonStyle.danger, 
-        custom_id="persistent_report_button"
+        custom_id="report_button_v1", # This ID is the key to persistence
+        emoji="🚨"
     )
-    async def report_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def report_callback(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Open the modal when they click the button
         await interaction.response.send_modal(ReportModal())
 
-# ---------- READY ----------
-@bot.event
-async def on_ready():
-    # This registers the view so it works even after a bot restart
-    bot.add_view(ReportView())
-    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
-    print("------")
+# --- THE BOT SETUP ---
+class TheModBot(commands.Bot):
+    def __init__(self):
+        intents = discord.Intents.default()
+        intents.message_content = True  # Required for prefix commands
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
 
-# ---------- COMMANDS ----------
+    async def setup_hook(self):
+        # This is where we tell the bot to "listen" for the button constantly
+        self.add_view(PersistentReportView())
+
+    async def on_ready(self):
+        print(f"✅ Main character energy: {self.user} is online")
+        print(f"🔗 Log Channel: {MOD_LOG_CHANNEL_ID}")
+
+# Init the bot
+bot = TheModBot()
+
+# --- COMMANDS ---
 @bot.command()
 @commands.has_permissions(administrator=True)
-async def setup_report(ctx):
-    """Run this command once to send the report button to the channel"""
-    await ctx.send(
-        "🚨 **Click below to submit a report**\nOur moderation team will review it shortly.",
-        view=ReportView()
+async def setup(ctx):
+    """Sends the initial report message with the button"""
+    embed = discord.Embed(
+        title="🛡️ Server Safety",
+        description=(
+            "Notice something breaking the rules? Use the button below to report it.\n\n"
+            "**Note:** False reporting can lead to a ban. Be real with us."
+        ),
+        color=discord.Color.blue()
     )
+    await ctx.send(embed=embed, view=PersistentReportView())
+    await ctx.message.delete() # Clean up the command message
 
-bot.run(TOKEN)
+# Run it
+if __name__ == "__main__":
+    bot.run(TOKEN)
